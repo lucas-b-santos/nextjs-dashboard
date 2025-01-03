@@ -7,28 +7,36 @@ import { InvoicesTableSkeleton } from '@/app/ui/skeletons';
 import { Suspense } from 'react';
 import { fetchInvoicesPages } from '@/app/lib/data';
 import AutoDismiss from '@/app/ui/auto-dismiss-message';
+import { cookies } from 'next/headers';
 
 export default async function Page(props: {
   searchParams?: Promise<{
     query?: string;
     page?: string;
-    invoiceCreated?: string;
   }>;
 }) {
   let searchParams = await props.searchParams;
-
-  const invoiceCreated = searchParams?.invoiceCreated;
 
   const query = searchParams?.query || '';
   const currentPage = Number(searchParams?.page) || 1;
 
   const totalPages = await fetchInvoicesPages(query);
 
+  const cookieStore = await cookies();
+  
+  const invoiceCreated = cookieStore.has('invoiceCreated');
+  const invoiceUpdated = cookieStore.has('invoiceUpdated');
+
   return (
     <div className="w-full">
       {
         invoiceCreated &&
         <AutoDismiss message='Invoice created successfully!' color='green' duration={3000}/>
+      }
+
+      {
+        invoiceUpdated &&
+        <AutoDismiss message='Invoice updated successfully!' color='green' duration={3000}/>
       }
 
       <div className="flex w-full items-center justify-between">

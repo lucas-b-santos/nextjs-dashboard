@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 export default function AutoDismiss(
     { duration, message, color }: { duration: number, message: string, color: string }) {
+        
     const [visible, setVisible] = useState(true);
 
     useEffect(() => {

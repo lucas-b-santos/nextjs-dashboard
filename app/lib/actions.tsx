@@ -1,16 +1,18 @@
 'use server';
 
 import { z } from 'zod';
-
 import { sql } from '@vercel/postgres';
-
 import { expirePath } from 'next/cache';
-
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { InvoiceForm } from './definitions';
+
+import { signIn } from '@/auth';
+import { AuthError } from 'next-auth';
 
 const FormSchema = z.object({
   id: z.string(),
-  customerId: z.string({
+  customer_id: z.string({
     invalid_type_error: 'Please select a customer.',
   }),
   amount: z.coerce
@@ -30,22 +32,22 @@ const UpdateInvoice = FormSchema.omit({ id: true, date: true });
 
 export type State = {
   errors?: {
-    customerId?: string[];
+    customer_id?: string[];
     amount?: string[];
     status?: string[];
   };
   message?: string | null;
   data?: {
-    customerId: FormDataEntryValue | null,
+    customer_id: FormDataEntryValue | null,
     amount: FormDataEntryValue | null,
     status: FormDataEntryValue | null,
-  };
+  } | InvoiceForm;
 };
 
-export async function createInvoice(prevState: State, formData: FormData) {
+export async function createInvoice(prevState: State, formData: FormData) : Promise<State> {
 
-  let values = {
-    customerId: formData.get('customerId'),
+  const values = {
+    customer_id: formData.get('customer_id'),
     amount: formData.get('amount'),
     status: formData.get('status'),
   };
@@ -66,7 +68,7 @@ export async function createInvoice(prevState: State, formData: FormData) {
   }
 
   // Prepare data for insertion into the database
-  const { customerId, amount, status } = validatedFields.data;
+  const { customer_id, amount, status } = validatedFields.data;
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split('T')[0];
 
@@ -74,7 +76,7 @@ export async function createInvoice(prevState: State, formData: FormData) {
   try {
     await sql`
       INSERT INTO invoices (customer_id, amount, status, date)
-      VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
+      VALUES (${customer_id}, ${amountInCents}, ${status}, ${date})
     `;
 
   } catch (error) {
@@ -84,30 +86,54 @@ export async function createInvoice(prevState: State, formData: FormData) {
     };
   }
 
+  // seta o cookie e coloca um tempo para expirar (maxAge (segundos))
+  // 1 segundo para que a outra página consiga ler o cookie a tempo
+  (await cookies()).set('invoiceCreated', 'true', { maxAge: 1 })
+
   // Revalidate the cache for the invoices page and redirect the user.
   expirePath('/dashboard/invoices');
-  redirect('/dashboard/invoices?invoiceCreated=true');
+  redirect('/dashboard/invoices');
 }
 
-export async function updateInvoice(id: string, formData: FormData) {
+export async function updateInvoice(id: string, prevState: State, formData: FormData): Promise<State> {
 
-  const { customerId, amount, status } = UpdateInvoice.parse({
-    customerId: formData.get('customerId'),
+  const values = {
+    customer_id: formData.get('customer_id'),
     amount: formData.get('amount'),
     status: formData.get('status'),
-  });
+  };
+
+  const validatedFields = UpdateInvoice.safeParse(values);
+
+  // If form validation fails, return errors early. Otherwise, continue.
+  if (!validatedFields.success) {
+
+    let fieldErrors = validatedFields.error.flatten().fieldErrors;
+
+    return {
+      errors: fieldErrors,
+      message: 'Missing Fields. Failed to Update Invoice.',
+      data: values
+    };
+  }
+
+  const { customer_id, amount, status } = validatedFields.data;
 
   const amountInCents = amount * 100;
 
   try {
     await sql`
         UPDATE invoices
-        SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
+        SET customer_id = ${customer_id}, amount = ${amountInCents}, status = ${status}
         WHERE id = ${id}
       `;
   } catch (error) {
     return { message: 'Database Error: Failed to Update Invoice.' };
   }
+
+  // seta o cookie e coloca um tempo para expirar (maxAge (segundos))
+  // 1 segundo para que a outra página consiga ler o cookie a tempo
+  (await cookies()).set('invoiceUpdated', 'true', { maxAge: 1 });
 
   expirePath('/dashboard/invoices');
   redirect('/dashboard/invoices');
@@ -120,5 +146,24 @@ export async function deleteInvoice(id: string) {
     return { message: 'Deleted Invoice.' };
   } catch (error) {
     return { message: 'Database Error: Failed to Delete Invoice.' };
+  }
+}
+
+export async function authenticate(
+  prevState: string | undefined,
+  formData: FormData,
+) {
+  try {
+    await signIn('credentials', formData);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      switch (error.type) {
+        case 'CredentialsSignin':
+          return 'Invalid credentials.';
+        default:
+          return 'Something went wrong.';
+      }
+    }
+    throw error;
   }
 }

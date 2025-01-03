@@ -1,6 +1,5 @@
 import clsx from 'clsx';
 import React from 'react';
-import { useFormStatus } from "react-dom";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
@@ -20,12 +19,8 @@ export function Button({ children, className, ...rest }: ButtonProps) {
   );
 }
 
-export function SubmitButton({children}: {children: React.ReactNode}) {
-  "use client";
-
-  const { pending } = useFormStatus();
-
-  return <Button type="submit" disabled={pending}>{pending ? "Carregando..." : children}</Button>;
+export function SubmitButton({ children, pending}: { children: React.ReactNode , pending: boolean }) {
+  return <Button type="submit" disabled={pending}>{pending ? "Enviando..." : children}</Button>;
 }
 
 
